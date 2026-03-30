@@ -8,6 +8,7 @@ declare global {
       user?: {
         userId: string;
         email: string;
+        userRole: string;
       };
     }
   }
@@ -34,6 +35,7 @@ export const authenticate = async (
     req.user = {
       userId: decoded.userId,
       email: decoded.email,
+      userRole: decoded.userRole, // Make sure this is included
     };
 
     next();

@@ -62,10 +62,11 @@ export class AuthController {
         mobileNumber,
         address,
         isActive: false, // User is inactive until admin activates
+        role: 'user', // Default role
       });
 
       await user.save();
-      console.log('✅ User saved:', user._id);
+      console.log('✅ User saved:', user._id, 'with role:', user.role);
 
       res.status(201).json({
         success: true,
@@ -78,6 +79,7 @@ export class AuthController {
           mobileNumber: user.mobileNumber,
           address: user.address,
           isActive: user.isActive,
+          role: user.role || 'user',
         },
       });
     } catch (error: any) {
@@ -113,6 +115,13 @@ export class AuthController {
           message: 'Invalid credentials',
         });
       }
+
+      // Debug log
+      console.log('👤 User found for login:', {
+        email: user.email,
+        role: user.role,
+        isActive: user.isActive,
+      });
 
       // ✅ Check if user is activated by admin
       if (!user.isActive) {
@@ -229,6 +238,15 @@ export class AuthController {
         });
       }
 
+      // Debug log
+      console.log('👤 User found for OTP verification:', {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        roleType: typeof user.role,
+        isActive: user.isActive,
+      });
+
       if (!user.isActive) {
         return res.status(403).json({
           success: false,
@@ -274,14 +292,19 @@ export class AuthController {
       user.pendingLogin = false;
       await user.save();
 
-      // Generate JWT token
+      // ✅ FIX: Ensure role is defined with fallback
+      const userRole = user.role || 'user';
+      console.log('🎫 Generating token with role:', userRole);
+
+      // Include userRole in the token payload
       const token = generateToken({
         userId: user._id.toString(),
         email: user.email,
         sessionToken: sessionToken,
+        userRole: userRole, // Use fallback value
       });
 
-      console.log(`✅ Login successful for ${email}`);
+      console.log(`✅ Login successful for ${email} with role: ${userRole}`);
 
       res.json({
         success: true,
@@ -296,6 +319,7 @@ export class AuthController {
           mobileNumber: user.mobileNumber,
           address: user.address,
           isActive: user.isActive,
+          role: userRole, // Use fallback value
         },
       });
     } catch (error: any) {
@@ -401,6 +425,7 @@ export class AuthController {
 
       try {
         decoded = verifyToken(token);
+        console.log('🔓 Token verified, userRole:', decoded.userRole);
       } catch (error) {
         return res.status(401).json({
           success: false,
@@ -449,6 +474,7 @@ export class AuthController {
           mobileNumber: user.mobileNumber,
           address: user.address,
           isActive: user.isActive,
+          role: user.role || decoded.userRole || 'user',
         },
       });
     } catch (error) {
@@ -517,6 +543,12 @@ export class AuthController {
 
       try {
         decoded = verifyToken(oldToken);
+        console.log(
+          '🔄 Refreshing token for user:',
+          decoded.email,
+          'role:',
+          decoded.userRole,
+        );
       } catch (error) {
         return res
           .status(401)
@@ -548,10 +580,15 @@ export class AuthController {
         });
       }
 
+      // ✅ Ensure role is defined with fallback
+      const userRole = user.role || decoded.userRole || 'user';
+      console.log('🔄 Generating new token with role:', userRole);
+
+      // Include userRole when refreshing token
       const newToken = generateToken({
         userId: user._id.toString(),
         email: user.email,
-        userRole: user.role,
+        userRole: userRole,
         sessionToken: user.currentSessionToken,
       });
 
@@ -624,6 +661,49 @@ export class AuthController {
       res
         .status(500)
         .json({ success: false, message: 'Internal server error' });
+    }
+  }
+
+  // Optional: Update user role (admin only)
+  static async updateUserRole(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+      const { role } = req.body;
+
+      if (!role || !['user', 'admin', 'moderator'].includes(role)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid role. Allowed roles: user, admin, moderator',
+        });
+      }
+
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      user.role = role;
+      await user.save();
+
+      res.json({
+        success: true,
+        message: `User role updated to ${role} successfully`,
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+        },
+      });
+    } catch (error) {
+      console.error('Update role error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+      });
     }
   }
 }

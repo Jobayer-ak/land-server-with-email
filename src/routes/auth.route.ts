@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
+import { requireAdmin } from '../middleware/role.middleware';
 
 const router = Router();
 
@@ -21,16 +22,7 @@ router.post('/verify-otp', AuthController.verifyOTP);
 // Resend OTP (if needed)
 router.post('/resend-otp', AuthController.resendOTP);
 
-// ==================== ADMIN ROUTES ====================
-
-// User management
-router.get('/users', AuthController.getAllUsers);
-router.put('/activate/:userId', AuthController.activateUser);
-
-// Session management
-router.put('/reset-session/:userId', AuthController.resetUserSession);
-
-// ==================== PROTECTED ROUTES ====================
+// ==================== PROTECTED ROUTES (Authenticated Users) ====================
 
 // User profile
 router.get('/profile', authenticate, AuthController.getProfile);
@@ -39,5 +31,34 @@ router.get('/profile', authenticate, AuthController.getProfile);
 router.get('/verify', authenticate, AuthController.verifyToken);
 router.post('/refresh', authenticate, AuthController.refreshToken);
 router.post('/logout', authenticate, AuthController.logout);
+
+// ==================== ADMIN ONLY ROUTES ====================
+
+// User management (Admin only)
+router.get('/users', authenticate, requireAdmin, AuthController.getAllUsers);
+router.put(
+  '/activate/:userId',
+  authenticate,
+  requireAdmin,
+  AuthController.activateUser,
+);
+router.put(
+  '/update-role/:userId',
+  authenticate,
+  requireAdmin,
+  AuthController.updateUserRole,
+);
+
+// Session management (Admin only)
+router.put(
+  '/reset-session/:userId',
+  authenticate,
+  requireAdmin,
+  AuthController.resetUserSession,
+);
+
+// ==================== MODERATOR ROUTES (Example - Optional) ====================
+// If you want to give moderators limited access
+// router.get('/users', authenticate, requireRole(['admin', 'moderator']), AuthController.getAllUsers);
 
 export default router;

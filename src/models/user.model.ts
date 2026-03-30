@@ -9,7 +9,7 @@ export interface IUser extends Document {
   address: string;
   password: string;
   isActive: boolean;
-  userRole: 'user' | 'admin';
+  role: 'user' | 'admin' | 'moderator';
 
   // OTP Fields
   otpCode?: string;
@@ -20,14 +20,6 @@ export interface IUser extends Document {
 
   // Session Management
   currentSessionToken?: string;
-
-  // Device Fields (optional - can be kept for tracking)
-  registeredDeviceId?: string;
-  registeredDeviceInfo?: string;
-  registeredDeviceFingerprint?: string;
-  lastLoginAt?: Date;
-  lastLoginDevice?: string;
-  lastLoginIP?: string;
 
   // Security Fields
   loginAttempts?: number;
@@ -78,15 +70,15 @@ const userSchema = new Schema<IUser>(
     },
     isActive: {
       type: Boolean,
-      default: true, // Changed to true for OTP login flow
+      default: false,
       required: true,
     },
-    userRole: {
+    role: {
       type: String,
-      enum: ['user', 'admin'],
+      enum: ['user', 'admin', 'moderator'],
       default: 'user',
+      required: true,
     },
-    // OTP Fields
     otpCode: {
       type: String,
       select: false,
@@ -106,13 +98,14 @@ const userSchema = new Schema<IUser>(
     lastOtpSentAt: {
       type: Date,
     },
-
-    // Session Management
     currentSessionToken: {
       type: String,
       select: false,
     },
-
+    loginAttempts: {
+      type: Number,
+      default: 0,
+    },
     lockedUntil: {
       type: Date,
       default: null,
@@ -123,19 +116,13 @@ const userSchema = new Schema<IUser>(
   },
 );
 
-// Hash password before saving
+// Hash password before saving - Modern approach (no next parameter needed)
 userSchema.pre('save', async function () {
   const user = this;
 
-  if (!user.isModified('password')) {
-    return;
-  }
-
-  try {
+  if (user.isModified('password')) {
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(user.password, salt);
-  } catch (error) {
-    throw error;
   }
 });
 
