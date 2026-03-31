@@ -79,7 +79,7 @@ export class AuthController {
           mobileNumber: user.mobileNumber,
           address: user.address,
           isActive: user.isActive,
-          role: user.role || 'user',
+          role: user.role,
         },
       });
     } catch (error: any) {
@@ -528,6 +528,76 @@ export class AuthController {
     }
   }
 
+  // Update profile (authenticated users)
+  static async updateProfile(req: Request, res: Response) {
+    try {
+      const userId = (req as any).user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Unauthorized',
+        });
+      }
+
+      const { fullName, mobileNumber, address } = req.body;
+
+      // Validate input
+      if (!fullName || !mobileNumber || !address) {
+        return res.status(400).json({
+          success: false,
+          message: 'Full name, mobile number, and address are required',
+        });
+      }
+
+      // Check if mobile number is already taken by another user
+      const existingUser = await User.findOne({
+        mobileNumber,
+        _id: { $ne: userId },
+      });
+
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Mobile number is already in use by another account',
+        });
+      }
+
+      // Update user
+      const user = await User.findByIdAndUpdate(
+        userId,
+        {
+          fullName,
+          mobileNumber,
+          address,
+        },
+        { new: true, runValidators: true },
+      ).select('-password');
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      console.log(`✅ Profile updated for user: ${user.email}`);
+
+      res.json({
+        success: true,
+        message: 'Profile updated successfully',
+        user,
+      });
+    } catch (error: any) {
+      console.error('Profile update error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error:
+          process.env.NODE_ENV === 'development' ? error.message : undefined,
+      });
+    }
+  }
+
   // ✅ Refresh token
   static async refreshToken(req: Request, res: Response) {
     try {
@@ -605,7 +675,9 @@ export class AuthController {
     }
   }
 
-  // Admin endpoints
+  // ==================== ADMIN ENDPOINTS ====================
+
+  // Get all users
   static async getAllUsers(req: Request, res: Response) {
     try {
       const users = await User.find().select('-password');
@@ -618,22 +690,35 @@ export class AuthController {
     }
   }
 
+  // Activate user (admin only)
   static async activateUser(req: Request, res: Response) {
     try {
       const { userId } = req.params;
       const user = await User.findById(userId);
-      if (!user)
-        return res
-          .status(404)
-          .json({ success: false, message: 'User not found' });
-      if (user.isActive)
-        return res
-          .status(400)
-          .json({ success: false, message: 'User is already active' });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      if (user.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: 'User is already active',
+        });
+      }
 
       user.isActive = true;
       await user.save();
-      res.json({ success: true, message: 'User activated successfully' });
+
+      console.log(`✅ User activated: ${user.email}`);
+
+      res.json({
+        success: true,
+        message: `User ${user.fullName} activated successfully. You can now manage their role.`,
+      });
     } catch (error) {
       console.error('Activation error:', error);
       res
@@ -642,20 +727,128 @@ export class AuthController {
     }
   }
 
+  // Deactivate user (admin only)
+  static async deactivateUser(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+      const user = await User.findById(userId);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      if (!user.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: 'User is already deactivated',
+        });
+      }
+
+      // Prevent admin from deactivating themselves
+      const adminId = (req as any).user?.userId;
+      if (userId === adminId) {
+        return res.status(400).json({
+          success: false,
+          message: 'You cannot deactivate your own account',
+        });
+      }
+
+      user.isActive = false;
+
+      // Clear session token to force logout if they're logged in
+      user.currentSessionToken = null;
+
+      await user.save();
+
+      console.log(`⚠️ User deactivated: ${user.email} by admin: ${adminId}`);
+
+      res.json({
+        success: true,
+        message: `User ${user.fullName} deactivated successfully. They will be logged out immediately.`,
+      });
+    } catch (error) {
+      console.error('Deactivation error:', error);
+      res
+        .status(500)
+        .json({ success: false, message: 'Internal server error' });
+    }
+  }
+
+  // Toggle user active status (activate/deactivate) - Convenience method
+  static async toggleUserStatus(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+      const user = await User.findById(userId);
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      // Prevent admin from toggling their own status
+      const adminId = (req as any).user?.userId;
+      if (userId === adminId) {
+        return res.status(400).json({
+          success: false,
+          message: 'You cannot change your own account status',
+        });
+      }
+
+      // Toggle status
+      user.isActive = !user.isActive;
+
+      // If deactivating, clear session token to force logout
+      if (!user.isActive) {
+        user.currentSessionToken = null;
+      }
+
+      await user.save();
+
+      const status = user.isActive ? 'activated' : 'deactivated';
+      console.log(`✅ User ${status}: ${user.email}`);
+
+      res.json({
+        success: true,
+        message: `User ${user.fullName} ${status} successfully`,
+        isActive: user.isActive,
+      });
+    } catch (error) {
+      console.error('Toggle user status error:', error);
+      res
+        .status(500)
+        .json({ success: false, message: 'Internal server error' });
+    }
+  }
+
+  // Reset user session
   static async resetUserSession(req: Request, res: Response) {
     try {
       const { userId } = req.params;
       const user = await User.findById(userId);
-      if (!user)
-        return res
-          .status(404)
-          .json({ success: false, message: 'User not found' });
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
 
       user.currentSessionToken = null;
       user.loginAttempts = 0;
       user.lockedUntil = undefined;
       await user.save();
-      res.json({ success: true, message: 'User session reset successfully' });
+
+      console.log(`🔄 Session reset for user: ${user.email}`);
+
+      res.json({
+        success: true,
+        message: `Session reset successfully for ${user.fullName}`,
+      });
     } catch (error) {
       console.error('Reset session error:', error);
       res
@@ -664,16 +857,95 @@ export class AuthController {
     }
   }
 
-  // Optional: Update user role (admin only)
+  // Update user role (admin only) - WITH ACTIVE USER CHECK
   static async updateUserRole(req: Request, res: Response) {
     try {
       const { userId } = req.params;
       const { role } = req.body;
 
+      // Validate role
       if (!role || !['user', 'admin', 'moderator'].includes(role)) {
         return res.status(400).json({
           success: false,
           message: 'Invalid role. Allowed roles: user, admin, moderator',
+        });
+      }
+
+      // Find the user
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      // ✅ CRITICAL: Check if user is active before allowing role change
+      if (!user.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: `Cannot change role for inactive user "${user.fullName}". Please activate the user first before changing their role.`,
+          code: 'USER_INACTIVE',
+          userStatus: user.isActive,
+        });
+      }
+
+      // Prevent admin from changing their own role if they're the only admin
+      const adminId = (req as any).user?.userId;
+      if (userId === adminId && role !== 'admin') {
+        const adminCount = await User.countDocuments({ role: 'admin' });
+        if (adminCount === 1) {
+          return res.status(400).json({
+            success: false,
+            message:
+              'Cannot change your own role. You are the only admin in the system.',
+            code: 'LAST_ADMIN',
+          });
+        }
+      }
+
+      // Store old role for logging
+      const oldRole = user.role;
+
+      // Update role
+      user.role = role;
+      await user.save();
+
+      console.log(
+        `🔄 User role updated: ${user.email} from "${oldRole}" to "${role}"`,
+      );
+
+      res.json({
+        success: true,
+        message: `User role updated from "${oldRole}" to "${role}" successfully.`,
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          role: user.role,
+          isActive: user.isActive,
+        },
+      });
+    } catch (error) {
+      console.error('Update role error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+      });
+    }
+  }
+
+  // Delete user (admin only)
+  static async deleteUser(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+
+      // Prevent admin from deleting themselves
+      const adminId = (req as any).user?.userId;
+      if (userId === adminId) {
+        return res.status(400).json({
+          success: false,
+          message: 'You cannot delete your own account',
         });
       }
 
@@ -685,21 +957,16 @@ export class AuthController {
         });
       }
 
-      user.role = role;
-      await user.save();
+      await User.findByIdAndDelete(userId);
+
+      console.log(`🗑️ User deleted: ${user.email}`);
 
       res.json({
         success: true,
-        message: `User role updated to ${role} successfully`,
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          role: user.role,
-        },
+        message: `User ${user.fullName} deleted successfully`,
       });
     } catch (error) {
-      console.error('Update role error:', error);
+      console.error('Delete user error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error',
