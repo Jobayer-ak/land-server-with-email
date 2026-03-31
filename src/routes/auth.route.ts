@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { AuthController } from '../controllers/auth.controller';
 import { authenticate } from '../middleware/auth.middleware';
-import { requireAdmin } from '../middleware/role.middleware';
+import { requireAdmin, requireModerator } from '../middleware/role.middleware';
 
 const router = Router();
 
@@ -33,63 +33,56 @@ router.get('/verify', authenticate, AuthController.verifyToken);
 router.post('/refresh', authenticate, AuthController.refreshToken);
 router.post('/logout', authenticate, AuthController.logout);
 
-// ==================== ADMIN ONLY ROUTES ====================
-
-// User management (Admin only)
-router.get('/users', authenticate, requireAdmin, AuthController.getAllUsers);
-
-// Activate user
+// ==================== MODERATOR ROUTES (Admin & Moderator) ====================
+router.get(
+  '/users',
+  authenticate,
+  requireModerator,
+  AuthController.getAllUsers,
+);
+router.get(
+  '/users/:userId',
+  authenticate,
+  requireModerator,
+  AuthController.getUserById,
+);
 router.put(
   '/activate/:userId',
   authenticate,
-  requireAdmin,
+  requireModerator,
   AuthController.activateUser,
 );
-
-// Deactivate user
 router.put(
   '/deactivate/:userId',
   authenticate,
-  requireAdmin,
+  requireModerator,
   AuthController.deactivateUser,
 );
+router.put(
+  '/reset-session/:userId',
+  authenticate,
+  requireModerator,
+  AuthController.resetUserSession,
+);
 
-// Toggle user status (activate/deactivate) - Convenience method
+// ==================== ADMIN ONLY ROUTES ====================
 router.put(
   '/toggle-status/:userId',
   authenticate,
   requireAdmin,
   AuthController.toggleUserStatus,
 );
-
-// Update user role
 router.put(
   '/update-role/:userId',
   authenticate,
   requireAdmin,
   AuthController.updateUserRole,
 );
-
-// Delete user
 router.delete(
   '/delete/:userId',
   authenticate,
   requireAdmin,
   AuthController.deleteUser,
 );
-
-// Session management (Admin only)
-router.put(
-  '/reset-session/:userId',
-  authenticate,
-  requireAdmin,
-  AuthController.resetUserSession,
-);
-
-// ==================== MODERATOR ROUTES (Example - Optional) ====================
-// If you want to give moderators limited access
-// import { requireRole } from '../middleware/role.middleware';
-// router.get('/users', authenticate, requireRole(['admin', 'moderator']), AuthController.getAllUsers);
-// router.put('/activate/:userId', authenticate, requireRole(['admin', 'moderator']), AuthController.activateUser);
 
 export default router;

@@ -61,8 +61,8 @@ export class AuthController {
         password,
         mobileNumber,
         address,
-        isActive: false, // User is inactive until admin activates
-        role: 'user', // Default role
+        isActive: false,
+        role: 'user',
       });
 
       await user.save();
@@ -116,14 +116,12 @@ export class AuthController {
         });
       }
 
-      // Debug log
       console.log('👤 User found for login:', {
         email: user.email,
         role: user.role,
         isActive: user.isActive,
       });
 
-      // ✅ Check if user is activated by admin
       if (!user.isActive) {
         return res.status(403).json({
           success: false,
@@ -131,7 +129,6 @@ export class AuthController {
         });
       }
 
-      // Check if account is locked
       if (user.lockedUntil && user.lockedUntil > new Date()) {
         const minutesLeft = Math.ceil(
           (user.lockedUntil.getTime() - Date.now()) / 60000,
@@ -142,7 +139,6 @@ export class AuthController {
         });
       }
 
-      // Verify password
       const isPasswordValid = await user.comparePassword(password);
 
       if (!isPasswordValid) {
@@ -165,11 +161,9 @@ export class AuthController {
         });
       }
 
-      // Reset login attempts (will be fully reset after OTP verification)
       user.loginAttempts = 0;
       user.lockedUntil = undefined;
 
-      // Rate limiting - prevent OTP spam (30 seconds between requests)
       if (user.lastOtpSentAt) {
         const timeSinceLastOtp =
           Date.now() - new Date(user.lastOtpSentAt).getTime();
@@ -182,11 +176,9 @@ export class AuthController {
         }
       }
 
-      // Generate 6-digit OTP
       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+      const otpExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-      // Store OTP and mark pending login
       user.otpCode = otp;
       user.otpExpires = otpExpires;
       user.otpVerified = false;
@@ -194,7 +186,6 @@ export class AuthController {
       user.lastOtpSentAt = new Date();
       await user.save();
 
-      // Send OTP via email
       await sendOTPEmail(email, otp);
 
       console.log(`📧 OTP sent to ${email} for login`);
@@ -238,12 +229,10 @@ export class AuthController {
         });
       }
 
-      // Debug log
       console.log('👤 User found for OTP verification:', {
         id: user._id,
         email: user.email,
         role: user.role,
-        roleType: typeof user.role,
         isActive: user.isActive,
       });
 
@@ -254,7 +243,6 @@ export class AuthController {
         });
       }
 
-      // Check if OTP was requested
       if (!user.pendingLogin) {
         return res.status(400).json({
           success: false,
@@ -262,7 +250,6 @@ export class AuthController {
         });
       }
 
-      // Verify OTP
       if (!user.otpCode || user.otpCode !== otp) {
         return res.status(400).json({
           success: false,
@@ -270,7 +257,6 @@ export class AuthController {
         });
       }
 
-      // Check if OTP expired
       if (user.otpExpires && user.otpExpires < new Date()) {
         user.pendingLogin = false;
         await user.save();
@@ -280,11 +266,9 @@ export class AuthController {
         });
       }
 
-      // Generate new session token for this device
       const sessionToken = crypto.randomBytes(32).toString('hex');
       const isNewDevice = !!user.currentSessionToken;
 
-      // Update user session
       user.currentSessionToken = sessionToken;
       user.otpCode = undefined;
       user.otpExpires = undefined;
@@ -292,16 +276,14 @@ export class AuthController {
       user.pendingLogin = false;
       await user.save();
 
-      // ✅ FIX: Ensure role is defined with fallback
       const userRole = user.role || 'user';
       console.log('🎫 Generating token with role:', userRole);
 
-      // Include userRole in the token payload
       const token = generateToken({
         userId: user._id.toString(),
         email: user.email,
         sessionToken: sessionToken,
-        userRole: userRole, // Use fallback value
+        userRole: userRole,
       });
 
       console.log(`✅ Login successful for ${email} with role: ${userRole}`);
@@ -319,7 +301,7 @@ export class AuthController {
           mobileNumber: user.mobileNumber,
           address: user.address,
           isActive: user.isActive,
-          role: userRole, // Use fallback value
+          role: userRole,
         },
       });
     } catch (error: any) {
@@ -333,7 +315,6 @@ export class AuthController {
     }
   }
 
-  // Resend OTP (after login attempt)
   static async resendOTP(req: Request, res: Response) {
     try {
       const { email } = req.body;
@@ -363,7 +344,6 @@ export class AuthController {
         });
       }
 
-      // Check if there's a pending login
       if (!user.pendingLogin) {
         return res.status(400).json({
           success: false,
@@ -371,7 +351,6 @@ export class AuthController {
         });
       }
 
-      // Rate limiting
       if (user.lastOtpSentAt) {
         const timeSinceLastOtp =
           Date.now() - new Date(user.lastOtpSentAt).getTime();
@@ -408,7 +387,6 @@ export class AuthController {
     }
   }
 
-  // ✅ Verify token (existing)
   static async verifyToken(req: Request, res: Response) {
     try {
       const authHeader = req.headers.authorization;
@@ -451,7 +429,6 @@ export class AuthController {
         });
       }
 
-      // Check session token for single device enforcement
       if (
         !user.currentSessionToken ||
         user.currentSessionToken !== decoded.sessionToken
@@ -486,7 +463,6 @@ export class AuthController {
     }
   }
 
-  // ✅ Logout
   static async logout(req: Request, res: Response) {
     try {
       const userId = (req as any).user?.userId;
@@ -502,7 +478,6 @@ export class AuthController {
     }
   }
 
-  // ✅ Get profile
   static async getProfile(req: Request, res: Response) {
     try {
       const userId = (req as any).user?.userId;
@@ -528,7 +503,6 @@ export class AuthController {
     }
   }
 
-  // Update profile (authenticated users)
   static async updateProfile(req: Request, res: Response) {
     try {
       const userId = (req as any).user?.userId;
@@ -541,7 +515,6 @@ export class AuthController {
 
       const { fullName, mobileNumber, address } = req.body;
 
-      // Validate input
       if (!fullName || !mobileNumber || !address) {
         return res.status(400).json({
           success: false,
@@ -549,7 +522,6 @@ export class AuthController {
         });
       }
 
-      // Check if mobile number is already taken by another user
       const existingUser = await User.findOne({
         mobileNumber,
         _id: { $ne: userId },
@@ -562,7 +534,6 @@ export class AuthController {
         });
       }
 
-      // Update user
       const user = await User.findByIdAndUpdate(
         userId,
         {
@@ -598,7 +569,6 @@ export class AuthController {
     }
   }
 
-  // ✅ Refresh token
   static async refreshToken(req: Request, res: Response) {
     try {
       const authHeader = req.headers.authorization;
@@ -650,11 +620,9 @@ export class AuthController {
         });
       }
 
-      // ✅ Ensure role is defined with fallback
       const userRole = user.role || decoded.userRole || 'user';
       console.log('🔄 Generating new token with role:', userRole);
 
-      // Include userRole when refreshing token
       const newToken = generateToken({
         userId: user._id.toString(),
         email: user.email,
@@ -675,9 +643,12 @@ export class AuthController {
     }
   }
 
-  // ==================== ADMIN ENDPOINTS ====================
+  // ==================== MODERATOR & ADMIN ENDPOINTS ====================
 
-  // Get all users
+  static hasModeratorPermissions(role: string): boolean {
+    return role === 'admin' || role === 'moderator';
+  }
+
   static async getAllUsers(req: Request, res: Response) {
     try {
       const users = await User.find().select('-password');
@@ -690,10 +661,51 @@ export class AuthController {
     }
   }
 
-  // Activate user (admin only)
+  static async getUserById(req: Request, res: Response) {
+    try {
+      const { userId } = req.params;
+      const user = await User.findById(userId).select('-password');
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found',
+        });
+      }
+
+      const currentUserRole = (req as any).user?.userRole;
+      if (!AuthController.hasModeratorPermissions(currentUserRole)) {
+        return res.status(403).json({
+          success: false,
+          message: 'Insufficient permissions to view user details.',
+        });
+      }
+
+      res.json({
+        success: true,
+        user,
+      });
+    } catch (error) {
+      console.error('Get user by ID error:', error);
+      res
+        .status(500)
+        .json({ success: false, message: 'Internal server error' });
+    }
+  }
+
   static async activateUser(req: Request, res: Response) {
     try {
       const { userId } = req.params;
+
+      const currentUserRole = (req as any).user?.userRole;
+      if (!AuthController.hasModeratorPermissions(currentUserRole)) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Insufficient permissions. Only admins and moderators can activate users.',
+        });
+      }
+
       const user = await User.findById(userId);
 
       if (!user) {
@@ -713,11 +725,11 @@ export class AuthController {
       user.isActive = true;
       await user.save();
 
-      console.log(`✅ User activated: ${user.email}`);
+      console.log(`✅ User activated by ${currentUserRole}: ${user.email}`);
 
       res.json({
         success: true,
-        message: `User ${user.fullName} activated successfully. You can now manage their role.`,
+        message: `User ${user.fullName} activated successfully.`,
       });
     } catch (error) {
       console.error('Activation error:', error);
@@ -727,10 +739,19 @@ export class AuthController {
     }
   }
 
-  // Deactivate user (admin only)
   static async deactivateUser(req: Request, res: Response) {
     try {
       const { userId } = req.params;
+
+      const currentUserRole = (req as any).user?.userRole;
+      if (!AuthController.hasModeratorPermissions(currentUserRole)) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Insufficient permissions. Only admins and moderators can deactivate users.',
+        });
+      }
+
       const user = await User.findById(userId);
 
       if (!user) {
@@ -747,7 +768,13 @@ export class AuthController {
         });
       }
 
-      // Prevent admin from deactivating themselves
+      if (currentUserRole === 'moderator' && user.role === 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Moderators cannot deactivate admin accounts.',
+        });
+      }
+
       const adminId = (req as any).user?.userId;
       if (userId === adminId) {
         return res.status(400).json({
@@ -757,13 +784,11 @@ export class AuthController {
       }
 
       user.isActive = false;
-
-      // Clear session token to force logout if they're logged in
       user.currentSessionToken = null;
 
       await user.save();
 
-      console.log(`⚠️ User deactivated: ${user.email} by admin: ${adminId}`);
+      console.log(`⚠️ User deactivated by ${currentUserRole}: ${user.email}`);
 
       res.json({
         success: true,
@@ -777,10 +802,18 @@ export class AuthController {
     }
   }
 
-  // Toggle user active status (activate/deactivate) - Convenience method
   static async toggleUserStatus(req: Request, res: Response) {
     try {
       const { userId } = req.params;
+
+      const currentUserRole = (req as any).user?.userRole;
+      if (currentUserRole !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only administrators can toggle user status.',
+        });
+      }
+
       const user = await User.findById(userId);
 
       if (!user) {
@@ -790,7 +823,6 @@ export class AuthController {
         });
       }
 
-      // Prevent admin from toggling their own status
       const adminId = (req as any).user?.userId;
       if (userId === adminId) {
         return res.status(400).json({
@@ -799,10 +831,8 @@ export class AuthController {
         });
       }
 
-      // Toggle status
       user.isActive = !user.isActive;
 
-      // If deactivating, clear session token to force logout
       if (!user.isActive) {
         user.currentSessionToken = null;
       }
@@ -810,7 +840,7 @@ export class AuthController {
       await user.save();
 
       const status = user.isActive ? 'activated' : 'deactivated';
-      console.log(`✅ User ${status}: ${user.email}`);
+      console.log(`✅ User ${status} by admin: ${user.email}`);
 
       res.json({
         success: true,
@@ -825,10 +855,19 @@ export class AuthController {
     }
   }
 
-  // Reset user session
   static async resetUserSession(req: Request, res: Response) {
     try {
       const { userId } = req.params;
+
+      const currentUserRole = (req as any).user?.userRole;
+      if (!AuthController.hasModeratorPermissions(currentUserRole)) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'Insufficient permissions. Only admins and moderators can reset user sessions.',
+        });
+      }
+
       const user = await User.findById(userId);
 
       if (!user) {
@@ -838,12 +877,21 @@ export class AuthController {
         });
       }
 
+      if (currentUserRole === 'moderator' && user.role === 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Moderators cannot reset admin sessions.',
+        });
+      }
+
       user.currentSessionToken = null;
       user.loginAttempts = 0;
       user.lockedUntil = undefined;
       await user.save();
 
-      console.log(`🔄 Session reset for user: ${user.email}`);
+      console.log(
+        `🔄 Session reset by ${currentUserRole} for user: ${user.email}`,
+      );
 
       res.json({
         success: true,
@@ -857,13 +905,11 @@ export class AuthController {
     }
   }
 
-  // Update user role (admin only) - WITH ACTIVE USER CHECK
   static async updateUserRole(req: Request, res: Response) {
     try {
       const { userId } = req.params;
       const { role } = req.body;
 
-      // Validate role
       if (!role || !['user', 'admin', 'moderator'].includes(role)) {
         return res.status(400).json({
           success: false,
@@ -871,7 +917,14 @@ export class AuthController {
         });
       }
 
-      // Find the user
+      const currentUserRole = (req as any).user?.userRole;
+      if (currentUserRole !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only administrators can change user roles.',
+        });
+      }
+
       const user = await User.findById(userId);
       if (!user) {
         return res.status(404).json({
@@ -880,7 +933,6 @@ export class AuthController {
         });
       }
 
-      // ✅ CRITICAL: Check if user is active before allowing role change
       if (!user.isActive) {
         return res.status(403).json({
           success: false,
@@ -890,7 +942,6 @@ export class AuthController {
         });
       }
 
-      // Prevent admin from changing their own role if they're the only admin
       const adminId = (req as any).user?.userId;
       if (userId === adminId && role !== 'admin') {
         const adminCount = await User.countDocuments({ role: 'admin' });
@@ -904,15 +955,12 @@ export class AuthController {
         }
       }
 
-      // Store old role for logging
       const oldRole = user.role;
-
-      // Update role
       user.role = role;
       await user.save();
 
       console.log(
-        `🔄 User role updated: ${user.email} from "${oldRole}" to "${role}"`,
+        `🔄 User role updated by admin: ${user.email} from "${oldRole}" to "${role}"`,
       );
 
       res.json({
@@ -935,12 +983,18 @@ export class AuthController {
     }
   }
 
-  // Delete user (admin only)
   static async deleteUser(req: Request, res: Response) {
     try {
       const { userId } = req.params;
 
-      // Prevent admin from deleting themselves
+      const currentUserRole = (req as any).user?.userRole;
+      if (currentUserRole !== 'admin') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only administrators can delete users.',
+        });
+      }
+
       const adminId = (req as any).user?.userId;
       if (userId === adminId) {
         return res.status(400).json({
@@ -959,7 +1013,7 @@ export class AuthController {
 
       await User.findByIdAndDelete(userId);
 
-      console.log(`🗑️ User deleted: ${user.email}`);
+      console.log(`🗑️ User deleted by admin: ${user.email}`);
 
       res.json({
         success: true,
