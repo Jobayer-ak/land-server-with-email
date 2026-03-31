@@ -467,7 +467,9 @@ export class AuthController {
     try {
       const userId = (req as any).user?.userId;
       if (userId) {
-        await User.findByIdAndUpdate(userId, { currentSessionToken: null });
+        await User.findByIdAndUpdate(userId, {
+          currentSessionToken: undefined,
+        });
       }
       res.json({ success: true, message: 'Logout successful' });
     } catch (error) {
@@ -784,7 +786,7 @@ export class AuthController {
       }
 
       user.isActive = false;
-      user.currentSessionToken = null;
+      user.currentSessionToken = undefined;
 
       await user.save();
 
@@ -834,7 +836,7 @@ export class AuthController {
       user.isActive = !user.isActive;
 
       if (!user.isActive) {
-        user.currentSessionToken = null;
+        user.currentSessionToken = undefined;
       }
 
       await user.save();
@@ -884,7 +886,7 @@ export class AuthController {
         });
       }
 
-      user.currentSessionToken = null;
+      user.currentSessionToken = undefined;
       user.loginAttempts = 0;
       user.lockedUntil = undefined;
       await user.save();

@@ -1,5 +1,5 @@
 // src/utils/jwt.ts
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 
 interface TokenPayload {
   userId: string;
@@ -9,7 +9,7 @@ interface TokenPayload {
 }
 
 export const generateToken = (payload: TokenPayload): string => {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET as string;
   if (!secret) {
     throw new Error('JWT_SECRET is not defined');
   }
@@ -22,13 +22,15 @@ export const generateToken = (payload: TokenPayload): string => {
     hasSessionToken: !!payload.sessionToken,
   });
 
-  return jwt.sign(payload, secret, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '7d',
-  });
+  const options: SignOptions = {
+    expiresIn: process.env.JWT_EXPIRES_IN || '24h',
+  };
+
+  return jwt.sign(payload, secret, options);
 };
 
 export const verifyToken = (token: string): TokenPayload => {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET as string;
   if (!secret) {
     throw new Error('JWT_SECRET is not defined');
   }
