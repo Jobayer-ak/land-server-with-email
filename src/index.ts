@@ -14,7 +14,7 @@ const app: Application = express();
 const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:3001',
-  // 'https://land-calculation-platform.netlify.app',
+  'https://bhumi-hisheb-calculator.netlify.app',
   process.env.FRONTEND_URL,
 ].filter((origin): origin is string => Boolean(origin));
 
